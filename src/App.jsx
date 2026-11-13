@@ -157,12 +157,20 @@ function Dashboard({ data, monthDate, setMonthDate, onGenerate, generating, onPi
   const percentage = held ? Math.round((totalPresent / held) * 100) : 0
   const marked = totalPresent + totalAbsent + totalCancelled
   const reportableSubjects = reportRows.length
+  const todaySessions = data.sessions.filter((item) => item.sessionDate === todayKey())
+  const attendedAllToday = todaySessions.length > 0 && todaySessions.every((item) => item.status === 'present')
   return (
     <>
       <div className="page-heading-row">
         <div><div className="eyebrow">YOUR ATTENDANCE AT A GLANCE</div><h1>Overview</h1><p className="page-intro">Track your classes and keep an eye on your monthly attendance.</p></div>
         <div className="heading-actions"><button className="button secondary" onClick={onExport}><Icon name="download" size={16} /> Export backup</button><button className="button primary" onClick={onGenerate} disabled={generating}>{generating ? <span className="spinner" /> : <Icon name="plus" size={16} />} Create missing classes</button></div>
       </div>
+      {attendedAllToday && (
+        <div className="attended-today" role="status">
+          <span className="attended-today-icon"><Icon name="check" size={17} /></span>
+          <div className="attended-today-copy"><strong>Attended all classes today</strong><span>All {todaySessions.length} {todaySessions.length === 1 ? 'class is' : 'classes are'} marked present. Nice work!</span></div>
+        </div>
+      )}
       <div className="section-toolbar"><div className="section-kicker">MONTHLY SUMMARY</div><MonthControl monthDate={monthDate} onChange={setMonthDate} /></div>
       <div className="stats-grid">
         <StatCard label="Attendance percentage" value={`${percentage}%`} sub={held ? `${totalPresent} present out of ${held} held` : 'No classes marked yet'} icon="chart" tone="teal" />
@@ -556,7 +564,7 @@ function App() {
         <header className="topbar"><div className="topbar-left"><button className="mobile-menu-button" onClick={() => setMobileNavOpen(true)} aria-label="Open menu"><Icon name="menu" /></button><span className="topbar-breadcrumb">Workspace <b>/</b> {pageTitle}</span></div><div className="topbar-right"><span className={`mode-pill ${cloudEnabled ? 'cloud' : 'local'}`}><i />{cloudEnabled ? 'Cloud synced' : 'Local storage'}</span><div className="top-avatar">{cloudEnabled ? (user?.email?.[0]?.toUpperCase() ?? 'A') : 'A'}</div></div></header>
         <div className="page-content">
           {error && <div className="global-error"><span>{error}</span><button onClick={() => setError('')}><Icon name="close" size={15} /></button></div>}
-          {activePage === 'overview' && <Dashboard data={data} monthDate={monthDate} setMonthDate={setMonthDate} onGenerate={handleGenerate} generating={generating} onPickDate={(date) => { setSelectedDate(date); navigate('attendance') }} selectedDate={selectedDate} onExport={handleExport} onGoAttendance={() => navigate('attendance')} />}
+          {activePage === 'overview' && <Dashboard data={data} monthDate={monthDate} setMonthDate={setMonthDate} onGenerate={() => handleGenerate(monthDate)} generating={generating} onPickDate={(date) => { setSelectedDate(date); navigate('attendance') }} selectedDate={selectedDate} onExport={handleExport} onGoAttendance={() => navigate('attendance')} />}
           {activePage === 'attendance' && <AttendancePage data={data} selectedDate={selectedDate} setSelectedDate={setSelectedDate} onGenerate={() => handleGenerate(selectedDate)} generating={generating} onUpdateSession={handleUpdateSession} onGoMonth={() => navigate('overview')} />}
           {activePage === 'timetable' && <TimetablePage data={data} onSaveSlot={handleSaveSlot} onDeleteSlot={handleDeleteSlot} onAddSlot={handleSaveSlot} />}
           {activePage === 'subjects' && <SubjectsPage data={data} onSaveSubject={handleSaveSubject} />}
