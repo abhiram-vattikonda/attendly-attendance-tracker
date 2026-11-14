@@ -100,6 +100,22 @@ function normaliseSlot(row) {
   }
 }
 
+async function fetchCloudData() {
+  const [subjectResult, slotResult, sessionResult] = await Promise.all([
+    supabase.from('subjects').select('*').order('name'),
+    supabase.from('timetable_slots').select('*').order('day_of_week').order('start_time'),
+    supabase.from('class_sessions').select('*').order('session_date').range(0, 9999),
+  ])
+  for (const result of [subjectResult, slotResult, sessionResult]) {
+    if (result.error) throw result.error
+  }
+  return {
+    subjects: (subjectResult.data ?? []).map((row) => ({ id: row.id, name: row.name, archived: row.archived ?? false })),
+    slots: (slotResult.data ?? []).map(normaliseSlot),
+    sessions: (sessionResult.data ?? []).map(normaliseSession),
+  }
+}
+
 export async function loadData() {
   if (!supabase) {
     let saved = localStorage.getItem(LOCAL_KEY)
@@ -123,19 +139,13 @@ export async function loadData() {
     }
   }
 
-  const [subjectResult, slotResult, sessionResult] = await Promise.all([
-    supabase.from('subjects').select('*').order('name'),
-    supabase.from('timetable_slots').select('*').order('day_of_week').order('start_time'),
-    supabase.from('class_sessions').select('*').order('session_date').range(0, 9999),
-  ])
-  for (const result of [subjectResult, slotResult, sessionResult]) {
-    if (result.error) throw result.error
+  let data = await fetchCloudData()
+  if (data.subjects.length === 0) {
+    const { error } = await supabase.rpc('seed_attendly_data')
+    if (error) throw error
+    data = await fetchCloudData()
   }
-  return {
-    subjects: (subjectResult.data ?? []).map((row) => ({ id: row.id, name: row.name, archived: row.archived ?? false })),
-    slots: (slotResult.data ?? []).map(normaliseSlot),
-    sessions: (sessionResult.data ?? []).map(normaliseSession),
-  }
+  return data
 }
 
 function dateToDay(dateString) {
@@ -164,8 +174,11 @@ export async function generateSessionsForMonth(year, monthIndex, slots, existing
   if (pending.length === 0) return existingSessions
 
   if (supabase) {
+    const { data: authData } = await supabase.auth.getUser()
+    const userId = authData?.user?.id
     const rows = pending.map((item) => ({
       id: item.id,
+      user_id: userId,
       session_date: item.sessionDate,
       slot_id: item.slotId,
       subject_id: item.subjectId,
@@ -175,7 +188,7 @@ export async function generateSessionsForMonth(year, monthIndex, slots, existing
       note: item.note,
     }))
     const { error } = await supabase.from('class_sessions').upsert(rows, {
-      onConflict: 'session_date,slot_id', ignoreDuplicates: true,
+      onConflict: 'user_id,session_date,slot_id', ignoreDuplicates: true,
     })
     if (error) throw error
     const { data, error: fetchError } = await supabase.from('class_sessions').select('*').order('session_date').range(0, 9999)

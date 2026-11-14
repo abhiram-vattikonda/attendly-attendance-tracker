@@ -373,22 +373,30 @@ function SubjectsPage({ data, onSaveSubject }) {
   )
 }
 
-function LoginScreen({ onLogin, loading, error }) {
+function LoginScreen({ onSubmit, loading, error, notice }) {
+  const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const isSignUp = mode === 'signup'
   return (
     <div className="auth-screen">
       <div className="auth-card">
         <div className="brand-mark large">A<span>.</span></div>
         <div className="eyebrow">PRIVATE ATTENDANCE WORKSPACE</div>
-        <h1>Welcome back</h1><p>Sign in with your admin account to manage attendance.</p>
-        <form onSubmit={(event) => { event.preventDefault(); onLogin(email, password) }}>
+        <div className="auth-switch" role="tablist">
+          <button type="button" role="tab" aria-selected={!isSignUp} className={!isSignUp ? 'active' : ''} onClick={() => { setMode('signin'); setPassword('') }}>Sign in</button>
+          <button type="button" role="tab" aria-selected={isSignUp} className={isSignUp ? 'active' : ''} onClick={() => { setMode('signup'); setPassword('') }}>Create account</button>
+        </div>
+        <h1>{isSignUp ? 'Create your account' : 'Welcome back'}</h1>
+        <p>{isSignUp ? 'Your subjects, timetable and attendance stay private to your account.' : 'Sign in to open your personal attendance workspace.'}</p>
+        <form onSubmit={(event) => { event.preventDefault(); onSubmit(mode, email, password) }}>
           <label>Email address</label><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="username" required />
-          <label>Password</label><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" autoComplete="current-password" required />
+          <label>Password</label><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={isSignUp ? 'At least 6 characters' : 'Your password'} autoComplete={isSignUp ? 'new-password' : 'current-password'} minLength={6} required />
           {error && <div className="inline-error">{error}</div>}
-          <button className="button primary auth-submit" type="submit" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'} <span>→</span></button>
+          {notice && <div className="auth-notice">{notice}</div>}
+          <button className="button primary auth-submit" type="submit" disabled={loading}>{loading ? (isSignUp ? 'Creating account…' : 'Signing in…') : (isSignUp ? 'Create account' : 'Sign in')} <span>→</span></button>
         </form>
-        <div className="auth-foot"><Icon name="shield" size={15} /> Admin access is controlled by your Supabase project.</div>
+        <div className="auth-foot"><Icon name="shield" size={15} /> Each account has its own private attendance data.</div>
       </div>
     </div>
   )
@@ -404,11 +412,10 @@ function App() {
   const [error, setError] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [user, setUser] = useState(null)
-  const [adminAccess, setAdminAccess] = useState(!cloudEnabled)
   const [authChecking, setAuthChecking] = useState(cloudEnabled)
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
-  const [profileMessage, setProfileMessage] = useState('')
+  const [loginNotice, setLoginNotice] = useState('')
 
   const refreshData = async () => {
     setLoadingData(true)
@@ -428,23 +435,15 @@ function App() {
       if (!mounted) return
       setUser(currentUser)
       if (!currentUser) {
-        setAdminAccess(false); setData(null); setProfileMessage(''); setLoadingData(false); setAuthChecking(false)
+        setData(null); setLoadingData(false); setAuthChecking(false)
         return
       }
-      setAuthChecking(true)
+      setAuthChecking(true); setLoadingData(true); setError('')
       try {
-        const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', currentUser.id).maybeSingle()
-        if (profileError) throw profileError
-        if (!profile || profile.role !== 'admin') {
-          setAdminAccess(false); setData(null)
-          setProfileMessage(profile ? 'Your account exists, but it has not been granted admin access yet.' : 'Your profile has not been created. Check the Supabase setup instructions.')
-        } else {
-          setAdminAccess(true); setProfileMessage('')
-          const fresh = await loadData()
-          if (mounted) setData(fresh)
-        }
+        const fresh = await loadData()
+        if (mounted) setData(fresh)
       } catch (err) {
-        setAdminAccess(false); setData(null); setProfileMessage(err.message || 'Could not verify your admin access.')
+        if (mounted) setError(err.message || 'Could not load attendance data.')
       } finally {
         if (mounted) { setAuthChecking(false); setLoadingData(false) }
       }
@@ -457,15 +456,27 @@ function App() {
   }, [])
 
   const handleLogin = async (email, password) => {
-    setLoginLoading(true); setLoginError('')
+    setLoginLoading(true); setLoginError(''); setLoginNotice('')
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     if (signInError) setLoginError(signInError.message)
     setLoginLoading(false)
   }
 
+  const handleSignUp = async (email, password) => {
+    setLoginLoading(true); setLoginError(''); setLoginNotice('')
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password })
+    if (signUpError) setLoginError(signUpError.message)
+    else if (!signUpData.session) setLoginNotice('Account created. Check your email to confirm it, then sign in.')
+    setLoginLoading(false)
+  }
+
+  const handleAuthSubmit = (mode, email, password) => (
+    mode === 'signup' ? handleSignUp(email, password) : handleLogin(email, password)
+  )
+
   const handleLogout = async () => {
     if (supabase) await supabase.auth.signOut()
-    setUser(null); setData(null); setAdminAccess(false)
+    setUser(null); setData(null)
   }
 
   const handleGenerate = async (target = monthDate) => {
@@ -543,10 +554,7 @@ function App() {
   ]
 
   if (cloudEnabled && authChecking) return <div className="loading-screen"><div className="brand-mark">A<span>.</span></div><span className="spinner large-spinner" /><p>Checking your workspace…</p></div>
-  if (cloudEnabled && !user) return <LoginScreen onLogin={handleLogin} loading={loginLoading} error={loginError} />
-  if (cloudEnabled && user && !adminAccess) return (
-    <div className="auth-screen"><div className="auth-card access-card"><div className="brand-mark large">A<span>.</span></div><div className="eyebrow">ADMIN ACCESS REQUIRED</div><h1>Almost there</h1><p>{profileMessage || 'This account does not have permission to access the attendance workspace.'}</p><div className="setup-hint">Open your Supabase SQL Editor and promote your user profile to <code>admin</code>. The README contains the exact SQL command.</div><button className="button secondary auth-submit" onClick={handleLogout}><Icon name="logout" size={16} /> Sign out</button></div></div>
-  )
+  if (cloudEnabled && !user) return <LoginScreen onSubmit={handleAuthSubmit} loading={loginLoading} error={loginError} notice={loginNotice} />
   if (loadingData || !data) return <div className="loading-screen"><div className="brand-mark">A<span>.</span></div><span className="spinner large-spinner" /><p>Loading your attendance workspace…</p></div>
 
   const pageTitle = navItems.find((item) => item.id === activePage)?.label ?? 'Overview'
@@ -555,7 +563,7 @@ function App() {
       {mobileNavOpen && <button className="mobile-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
       <aside className={`sidebar ${mobileNavOpen ? 'open' : ''}`}>
         <div className="brand"><div className="brand-mark">A<span>.</span></div><div><strong>attendly</strong><small>STUDENT WORKSPACE</small></div></div>
-        <div className="sidebar-profile"><div className="avatar">{cloudEnabled ? (user?.email?.[0]?.toUpperCase() ?? 'A') : 'A'}</div><div><strong>{cloudEnabled ? 'Admin workspace' : 'My workspace'}</strong><small>{cloudEnabled ? user?.email : 'Personal attendance'}</small></div></div>
+        <div className="sidebar-profile"><div className="avatar">{cloudEnabled ? (user?.email?.[0]?.toUpperCase() ?? 'A') : 'A'}</div><div><strong>{cloudEnabled ? 'My workspace' : 'Local workspace'}</strong><small>{cloudEnabled ? user?.email : 'Personal attendance'}</small></div></div>
         <div className="nav-label">WORKSPACE</div>
         {['TRACK', 'ADMIN'].map((group) => <div className="nav-group" key={group}><div className="nav-group-label">{group}</div>{navItems.filter((item) => item.group === group).map((item) => <button key={item.id} className={`nav-item ${activePage === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}><Icon name={item.icon} size={18} /><span>{item.label}</span>{activePage === item.id && <i />}</button>)}</div>)}
         <div className="sidebar-bottom"><div className={`sync-status ${cloudEnabled ? 'cloud' : 'local'}`}><span className="sync-dot" /><div><strong>{cloudEnabled ? 'Cloud sync enabled' : 'Local mode'}</strong><small>{cloudEnabled ? 'Synced to your database' : 'Saved in this browser only'}</small></div></div><button className="sidebar-export" onClick={handleExport}><Icon name="download" size={16} /> Export data backup</button>{cloudEnabled && <button className="sidebar-export logout-button" onClick={handleLogout}><Icon name="logout" size={16} /> Sign out</button>}<div className="sidebar-version">ATTENDLY · VERSION 1.0</div></div>

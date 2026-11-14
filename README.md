@@ -1,6 +1,6 @@
 # Attendly — Medical Attendance Tracker
 
-A responsive attendance website preloaded with the weekly timetable from the supplied image. It includes a daily register, monthly subject-wise attendance percentages, timetable administration, subject administration, backup export, and optional Supabase cloud sync.
+A responsive attendance website preloaded with the weekly timetable from the supplied image. It includes a daily register, monthly subject-wise attendance percentages, timetable administration, subject administration, backup export, and optional Supabase cloud sync with separate private data for every account.
 
 ## What's included
 
@@ -13,6 +13,7 @@ A responsive attendance website preloaded with the weekly timetable from the sup
 - **Backup:** export your current data as JSON from the sidebar or Overview page.
 - **Local mode:** works immediately without a backend; data is saved in the current browser only.
 - **Cloud mode:** Supabase authentication + Row Level Security for private, cross-device data.
+- **Multiple accounts:** every signed-up account gets its own private subjects, timetable and attendance records. Accounts never see each other's data.
 
 ## Attendance calculation
 
@@ -21,6 +22,12 @@ For each subject and month:
 `Attendance % = Present / (Present + Absent) × 100`
 
 Cancelled and Unmarked sessions are excluded from the denominator. A two-hour or three-hour timetable block counts as one class session, just like a one-hour block. Repeated periods for the same subject count as separate sessions.
+
+## Multiple accounts
+
+Cloud mode supports any number of accounts. Each account has its own subjects, timetable, and class records, and Row Level Security enforces that separation at the database level. To add another person, sign out and choose **Create account** on the sign-in screen. They can also sign in on another device and see their own data.
+
+The schema is safe to run again on an older single-user database. Existing subjects, timetable slots, and attendance are assigned to the first profile so nothing is lost; new accounts start with a fresh copy of the default timetable.
 
 ## Run locally
 
@@ -49,21 +56,15 @@ The included GitHub Actions workflow builds and deploys the site whenever you pu
 1. Create a project at [supabase.com](https://supabase.com/).
 2. Open **SQL Editor → New query**.
 3. Copy the complete contents of [`supabase/schema.sql`](supabase/schema.sql), paste it into the editor, and run it once.
-4. The schema creates the database tables, Row Level Security policies, an auth profile trigger, all subjects, and the initial weekly timetable.
+4. The schema creates the database tables, per-account Row Level Security policies, and an auth trigger that seeds each new account with the default subjects and weekly timetable.
 
-### 2. Create your admin login
+### 2. Create accounts
 
-1. In Supabase, open **Authentication → Users → Add user**.
-2. Create your admin user with your email and a password.
-3. Open **SQL Editor** and run this command, replacing the email with the one you just created:
+After the site is deployed, open it and use the **Create account** tab. Every new account is seeded with the default subjects and timetable automatically.
 
-```sql
-update public.profiles
-set role = 'admin'
-where email = 'your-email@example.com';
-```
+You can also pre-create accounts in Supabase under **Authentication → Users → Add user**. The same seeding trigger runs for any auth user created there.
 
-The app only permits a profile with the `admin` role to read or change attendance data. New auth users default to `pending`.
+Email confirmation is enabled by default in Supabase. New accounts must confirm their email before signing in; you can adjust this under **Authentication → Sign In / Providers → Email**. To make confirmation links work, set **Authentication → URL Configuration → Site URL** to your published website URL.
 
 ### 3. Add the Supabase keys to GitHub
 
@@ -103,14 +104,14 @@ If the repository already exists and contains a README or other files, clone it 
 3. Open the **Actions** tab and wait for **Deploy Attendly to GitHub Pages** to finish successfully.
 4. GitHub will show the website URL in **Settings → Pages**. It normally looks like `https://YOUR_USERNAME.github.io/YOUR_REPOSITORY/`.
 5. In Supabase, open **Authentication → URL Configuration** and set the Site URL to that published website URL. Add the same URL to the Redirect URLs list.
-6. Open your website and sign in with the admin email and password created in step 2.
+6. Open your website and create an account, or sign in with an account created in step 2.
 
 After the first setup, every push to `main` automatically rebuilds and deploys the site.
 
 ## Local mode vs cloud mode
 
 - **Local mode:** best for trying the app immediately. Data stays in that browser on that device and is not shared with another browser or device.
-- **Cloud mode:** add the two Supabase secrets before the GitHub Actions build. Sign-in is required and attendance data is stored in your Supabase project.
+- **Cloud mode:** add the two Supabase secrets before the GitHub Actions build. Sign-in is required, attendance data is stored in your Supabase project, and each account has its own private workspace.
 - Local-mode records are not automatically copied into Supabase. Export a JSON backup before switching modes if you need to keep the test records. The current app provides backup export; it does not currently include a JSON import tool.
 
 ## Timetable interpretation
